@@ -1484,10 +1484,10 @@ function respuestaFactura(fac) {
 }
 function proponerFactura(fac, plan, tipo) {
   const tx = []; const lin = []; const margen = +Cfg.margen || 0;
-  const nuevos = {};
+  const nuevos = {}; const acum = {};
   for (const p of plan) {
     if (tipo === 'stock' || tipo === 'todo') {
-      if (p.prod) { const cur = Store.get('stock', p.prod.id); tx.push({ op: 'upd', col: 'stock', id: p.prod.id, patch: { cantidad: (+cur.cantidad || 0) + p.cantidad } }); lin.push(`${p.prod.nombre}: ${cur.cantidad} → ${(+cur.cantidad || 0) + p.cantidad}`); }
+      if (p.prod) { const cur = Store.get('stock', p.prod.id); const ant = acum[p.prod.id] != null ? acum[p.prod.id] : (+cur.cantidad || 0); const nue = ant + p.cantidad; acum[p.prod.id] = nue; tx.push({ op: 'upd', col: 'stock', id: p.prod.id, patch: { cantidad: nue } }); lin.push(`${p.prod.nombre}: ${ant} → ${nue}`); }
       else { tx.push({ op: 'add', col: 'stock', doc: { nombre: cap(p.nombre), cantidad: p.cantidad, costo: p.precio, precio: Math.round(p.precio * (1 + margen / 100)), minimo: 0 } }); lin.push(L(`NUEVO ${cap(p.nombre)}: ${p.cantidad} u. (venta ${money(Math.round(p.precio * (1 + margen / 100)))})`, `NEW ${cap(p.nombre)}: ${p.cantidad} u.`)); nuevos[p.nombre] = 1; }
     }
     if ((tipo === 'precios' || tipo === 'todo') && p.prod && !nuevos[p.nombre]) {
