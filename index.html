@@ -459,7 +459,7 @@ const CFG_DEF = () => ({
   perfil: 'taller', negocio: 'Mi Negocio', logo: '', color: '#3b82f6',
   asistente: 'Rafa', idioma: 'es', tono: 'corto',
   voz: { hablar: true, voiceURI: '', velocidad: 1, volumen: 1, fraseActiva: false, fraseTexto: '' },
-  ia: { modo: 'reglas', key: '', modelo: 'gemini-2.5-flash' },
+  ia: { modo: 'reglas', key: '', modelo: 'gemini-flash-latest' },
   modulos: todosModulos(),
   resumenAuto: false, resumenHablado: false,
   tema: 'auto', letraGrande: false,
@@ -642,11 +642,24 @@ const IA = {
     const k = Cfg.ia.key; if (!k) throw new Error('Falta la clave de la API');
     const parts = [{ text: prompt }];
     for (const im of (imagenes || [])) { const m = String(im).match(/^data:(.+?);base64,(.+)$/); if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); }
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(Cfg.ia.modelo || 'gemini-2.5-flash')}:generateContent`, {
+    const base = 'https://generativelanguage.googleapis.com/v1beta/';
+    const llamar = (mod) => fetch(base + 'models/' + encodeURIComponent(mod) + ':generateContent', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
       body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2 } })
     });
-    if (!r.ok) throw new Error('IA en línea: error ' + r.status);
+    let r = await llamar(Cfg.ia.modelo || 'gemini-flash-latest');
+    if (r.status === 404) {
+      /* el modelo ya no existe: buscar uno disponible en la cuenta y recordarlo */
+      try {
+        const lr = await fetch(base + 'models?pageSize=200', { headers: { 'x-goog-api-key': k } });
+        if (lr.ok) {
+          const ms = ((await lr.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-[\d.]+-flash(-lite)?$/.test(m.name));
+          ms.sort((x, y) => parseFloat(y.name.match(/gemini-([\d.]+)/)[1]) - parseFloat(x.name.match(/gemini-([\d.]+)/)[1]));
+          if (ms.length) { const nuevo = ms[0].name.replace('models/', ''); r = await llamar(nuevo); if (r.ok) { Cfg.ia.modelo = nuevo; guardarCfg(); } }
+        }
+      } catch (_) {}
+    }
+    if (!r.ok) { let d = ''; try { d = ((await r.json()).error || {}).message || ''; } catch (_) {} throw new Error('IA en línea: error ' + r.status + (d ? ' (' + d.slice(0, 90) + ')' : '')); }
     const j = await r.json();
     const t = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
     return (t || []).map(x => x.text || '').join('').trim();
