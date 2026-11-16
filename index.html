@@ -650,16 +650,22 @@ const IA = {
     let r;
     try { r = await llamar(Cfg.ia.modelo || 'gemini-flash-latest'); }
     catch (e) { throw new Error('IA en línea: no responde (' + (e.name === 'TimeoutError' ? 'tardó más de 25 s' : e.message) + ')'); }
-    if (r.status === 404) {
-      /* el modelo ya no existe: buscar uno disponible en la cuenta y recordarlo */
+    if ([404, 429, 500, 503].includes(r.status)) {
+      /* modelo inexistente o saturado: probar otros disponibles (primero los "lite" y los de nombre fijo) */
+      const probados = [Cfg.ia.modelo || 'gemini-flash-latest'];
+      let cand = ['gemini-flash-lite-latest'];
       try {
         const lr = await fetch(base + 'models?pageSize=200', { signal: AbortSignal.timeout(15000), headers: { 'x-goog-api-key': k } });
         if (lr.ok) {
           const ms = ((await lr.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-[\d.]+-flash(-lite)?$/.test(m.name));
-          ms.sort((x, y) => parseFloat(y.name.match(/gemini-([\d.]+)/)[1]) - parseFloat(x.name.match(/gemini-([\d.]+)/)[1]));
-          if (ms.length) { const nuevo = ms[0].name.replace('models/', ''); r = await llamar(nuevo); if (r.ok) { Cfg.ia.modelo = nuevo; guardarCfg(); } }
+          ms.sort((x, y) => parseFloat(y.name.match(/gemini-([\d.]+)/)[1]) - parseFloat(x.name.match(/gemini-([\d.]+)/)[1]) || (x.name.includes('lite') ? 1 : -1));
+          cand = cand.concat(ms.map(m => m.name.replace('models/', '')));
         }
       } catch (_) {}
+      for (const nuevo of cand) {
+        if (probados.includes(nuevo) || probados.length > 4) continue; probados.push(nuevo);
+        try { const r2 = await llamar(nuevo); if (r2.ok) { r = r2; Cfg.ia.modelo = nuevo; guardarCfg(); break; } r = r2; } catch (_) {}
+      }
     }
     if (!r.ok) { let d = ''; try { d = ((await r.json()).error || {}).message || ''; } catch (_) {} throw new Error('IA en línea: error ' + r.status + (d ? ' (' + d.slice(0, 90) + ')' : '')); }
     const j = await r.json();
