@@ -1,0 +1,5 @@
+MOTOR IA - DEMO
+1) Subir estos archivos a un repo de GitHub (como las otras apps) y activar Pages.
+2) Abrir en Chrome. Ya trae datos de ejemplo. Configuracion (engranaje) para todo lo demas.
+3) licencias.html es SOLO tuyo: no se sube a internet.
+Importante antes de vender: cambiar SECRETO_LICENCIA (en index.html y licencias.html, mismo valor).
