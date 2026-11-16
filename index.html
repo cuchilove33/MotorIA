@@ -644,14 +644,16 @@ const IA = {
     for (const im of (imagenes || [])) { const m = String(im).match(/^data:(.+?);base64,(.+)$/); if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); }
     const base = 'https://generativelanguage.googleapis.com/v1beta/';
     const llamar = (mod) => fetch(base + 'models/' + encodeURIComponent(mod) + ':generateContent', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+      signal: AbortSignal.timeout(25000), method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
       body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2 } })
     });
-    let r = await llamar(Cfg.ia.modelo || 'gemini-flash-latest');
+    let r;
+    try { r = await llamar(Cfg.ia.modelo || 'gemini-flash-latest'); }
+    catch (e) { throw new Error('IA en línea: no responde (' + (e.name === 'TimeoutError' ? 'tardó más de 25 s' : e.message) + ')'); }
     if (r.status === 404) {
       /* el modelo ya no existe: buscar uno disponible en la cuenta y recordarlo */
       try {
-        const lr = await fetch(base + 'models?pageSize=200', { headers: { 'x-goog-api-key': k } });
+        const lr = await fetch(base + 'models?pageSize=200', { signal: AbortSignal.timeout(15000), headers: { 'x-goog-api-key': k } });
         if (lr.ok) {
           const ms = ((await lr.json()).models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-[\d.]+-flash(-lite)?$/.test(m.name));
           ms.sort((x, y) => parseFloat(y.name.match(/gemini-([\d.]+)/)[1]) - parseFloat(x.name.match(/gemini-([\d.]+)/)[1]));
@@ -1868,6 +1870,8 @@ const UI = {
       ${inp('ia.key', L('Clave de API de Gemini (para IA en línea y fotos)', 'Gemini API key (online AI and photos)'), 'password')}
       ${inp('ia.modelo', L('Modelo en línea', 'Online model'))}
       <div class="f"><label>${L('Archivo del modelo Gemma (.task / .litertlm), se guarda en este equipo', 'Gemma model file (.task / .litertlm), stored on this device')}</label><input type="file" id="modeloFile"></div>
+      <button class="big sec" id="probarOnline">${L('Probar conexión con Gemini', 'Test Gemini connection')}</button>
+      <div class="note" id="probarRes"></div>
       <button class="big sec" id="cargarModelo">${L('Cargar modelo guardado', 'Load saved model')}</button>
       <div class="note">${L('Estado local: ', 'Local status: ')}<b id="iaEstado">${esc(IA.estado)}</b></div>
     </div></details>
@@ -1926,6 +1930,7 @@ const UI = {
     $('#probarVoz').onclick = () => Voz.hablar(L(`Hola, soy ${Cfg.asistente}. ¿Así me escuchás bien?`, `Hi, I'm ${Cfg.asistente}. Can you hear me well?`), true);
     $('#modeloFile').onchange = (e) => { const f = e.target.files[0]; if (f) IA.cargarLocal(f); };
     $('#cargarModelo').onclick = () => IA.cargarLocal(null);
+    $('#probarOnline').onclick = async () => { const o = $('#probarRes'); o.textContent = '⏳ …'; const t0 = Date.now(); try { const r = await IA._online('Respondé solo: OK'); o.textContent = '✅ ' + (r || '(vacío)') + ' · ' + Cfg.ia.modelo + ' · ' + Math.round((Date.now() - t0) / 100) / 10 + ' s'; } catch (e) { o.textContent = '❌ ' + e.message; } };
     $('#modPerfil').onclick = () => { const pf = PERFILES[Cfg.perfil]; Cfg.modulos = Object.fromEntries(Object.keys(MODULOS).map(m => [m, pf.modulos.includes(m)])); guardarCfg(); this.renderConfig(); this.marca(); };
     $('#guardarChips').onclick = () => { const l = $('#chipsTxt').value.split('\n').map(x => x.split('|')).filter(a => a.length >= 2 && a[0].trim()).map(a => [a[0].trim(), a.slice(1).join('|').trim()]); Cfg.chips = l.length ? l : null; guardarCfg(); this.chips(); this.toast(L('Atajos guardados', 'Shortcuts saved')); };
     $('#guardarPin').onclick = async () => { const v = $('#pinNuevo').value.trim(); Cfg.pinHash = v ? await sha256hex('motor' + v) : ''; guardarCfg(); this.unlocked = true; this.toast(v ? L('PIN guardado', 'PIN saved') : L('PIN quitado', 'PIN removed')); };
