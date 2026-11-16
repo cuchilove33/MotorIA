@@ -644,13 +644,12 @@ const IA = {
     for (const im of (imagenes || [])) { const m = String(im).match(/^data:(.+?);base64,(.+)$/); if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); }
     const base = 'https://generativelanguage.googleapis.com/v1beta/';
     const llamar = (mod) => fetch(base + 'models/' + encodeURIComponent(mod) + ':generateContent', {
-      signal: AbortSignal.timeout(25000), method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+      signal: AbortSignal.timeout(14000), method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
       body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2 } })
     });
-    let r;
-    try { r = await llamar(Cfg.ia.modelo || 'gemini-flash-latest'); }
-    catch (e) { throw new Error('IA en línea: no responde (' + (e.name === 'TimeoutError' ? 'tardó más de 25 s' : e.message) + ')'); }
-    if ([404, 429, 500, 503].includes(r.status)) {
+    let r; const seguro = async (m) => { try { return await llamar(m); } catch (e) { return { ok: false, status: 0, json: async () => ({ error: { message: e.name === 'TimeoutError' ? 'tardó demasiado' : e.message } }) }; } };
+    r = await seguro(Cfg.ia.modelo || 'gemini-flash-latest');
+    if (!r.ok && [0, 404, 429, 500, 503].includes(r.status)) {
       /* modelo inexistente o saturado: probar otros disponibles (primero los "lite" y los de nombre fijo) */
       const probados = [Cfg.ia.modelo || 'gemini-flash-latest'];
       let cand = ['gemini-flash-lite-latest'];
@@ -663,8 +662,8 @@ const IA = {
         }
       } catch (_) {}
       for (const nuevo of cand) {
-        if (probados.includes(nuevo) || probados.length > 4) continue; probados.push(nuevo);
-        try { const r2 = await llamar(nuevo); if (r2.ok) { r = r2; Cfg.ia.modelo = nuevo; guardarCfg(); break; } r = r2; } catch (_) {}
+        if (probados.includes(nuevo) || probados.length > 3) continue; probados.push(nuevo);
+        const r2 = await seguro(nuevo); if (r2.ok) { r = r2; Cfg.ia.modelo = nuevo; guardarCfg(); break; } r = r2;
       }
     }
     if (!r.ok) { let d = ''; try { d = ((await r.json()).error || {}).message || ''; } catch (_) {} throw new Error('IA en línea: error ' + r.status + (d ? ' (' + d.slice(0, 90) + ')' : '')); }
